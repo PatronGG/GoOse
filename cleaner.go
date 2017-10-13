@@ -282,7 +282,7 @@ var removeNodesRegEx = regexp.MustCompile("" +
 
 // Clean removes HTML elements around the main content and prepares the document for parsing
 func (c *Cleaner) Clean(docToClean *goquery.Document) *goquery.Document {
-	if c.config.debug {
+	if c.config.Debug {
 		log.Println("Starting cleaning phase with Cleaner")
 	}
 	docToClean = c.cleanBr(docToClean)
@@ -337,7 +337,7 @@ func (c *Cleaner) cleanEMTags(doc *goquery.Document) *goquery.Document {
 			c.config.parser.dropTag(s)
 		}
 	})
-	if c.config.debug {
+	if c.config.Debug {
 		log.Printf("Cleaning %d EM tags\n", ems.Size())
 	}
 	return doc
@@ -391,14 +391,14 @@ func (c *Cleaner) dropCaps(doc *goquery.Document) *goquery.Document {
 			count++
 		}
 	})
-	if c.config.debug && count > 0 {
+	if c.config.Debug && count > 0 {
 		log.Printf("Cleaned %d dropcap tags\n", count)
 	}
 	return doc
 }
 
 func (c *Cleaner) removeScriptsStyle(doc *goquery.Document) *goquery.Document {
-	if c.config.debug {
+	if c.config.Debug {
 		log.Println("Starting to remove script tags")
 	}
 	count := 0 // number of removed nodes
@@ -407,7 +407,7 @@ func (c *Cleaner) removeScriptsStyle(doc *goquery.Document) *goquery.Document {
 		c.config.parser.removeNode(s)
 		count++
 	})
-	if c.config.debug && count > 0 {
+	if c.config.Debug && count > 0 {
 		log.Printf("Removed %d script and style tags\n", scripts.Size())
 	}
 	return doc
@@ -423,14 +423,14 @@ func (c *Cleaner) cleanBadTags(doc *goquery.Document, pattern *regexp.Regexp, se
 			naughtyList.Each(func(j int, node *goquery.Selection) {
 				attribute, _ := node.Attr(selector)
 				if pattern.MatchString(attribute) {
-					if c.config.debug {
+					if c.config.Debug {
 						log.Printf("Cleaning: Removing node with %s: %s\n", selector, c.config.parser.name(selector, node))
 					}
 					c.config.parser.removeNode(node)
 					count++
 				}
 			})
-			if c.config.debug && count > 0 {
+			if c.config.Debug && count > 0 {
 				log.Printf("%d naughty %s elements found", count, selector)
 			}
 		}
@@ -483,7 +483,7 @@ func (c *Cleaner) tabsAndNewLinesReplacements(text string) string {
 }
 
 func (c *Cleaner) convertDivsToParagraphs(doc *goquery.Document, domType string) *goquery.Document {
-	if c.config.debug {
+	if c.config.Debug {
 		log.Println("Starting to replace bad divs...")
 	}
 	badDivs := 0
@@ -499,7 +499,7 @@ func (c *Cleaner) convertDivsToParagraphs(doc *goquery.Document, domType string)
 			var replacementText []string
 			nodesToRemove := list.New()
 			children := div.Contents()
-			if c.config.debug {
+			if c.config.Debug {
 				log.Printf("Found %d children of div\n", children.Size())
 			}
 			children.EachWithBreak(func(i int, kid *goquery.Selection) bool {
@@ -517,7 +517,7 @@ func (c *Cleaner) convertDivsToParagraphs(doc *goquery.Document, domType string)
 					}
 					if len(text) > 1 {
 						prev := kidNode.PrevSibling
-						if c.config.debug {
+						if c.config.Debug {
 							log.Printf("PARENT CLASS: %s NODENAME: %s\n", c.config.parser.name("class", div), tag)
 							log.Printf("TEXTREPLACE: %s\n", strings.Replace(text, "\n", "", -1))
 						}
@@ -525,7 +525,7 @@ func (c *Cleaner) convertDivsToParagraphs(doc *goquery.Document, domType string)
 							nodeSelection := kid.HasNodes(prev)
 							html, _ := nodeSelection.Html()
 							replacementText = append(replacementText, html)
-							if c.config.debug {
+							if c.config.Debug {
 								log.Printf("SIBLING NODENAME ADDITION: %s TEXT: %s\n", prev.Data, html)
 							}
 						}
@@ -552,7 +552,7 @@ func (c *Cleaner) convertDivsToParagraphs(doc *goquery.Document, domType string)
 			}
 		}
 	})
-	if c.config.debug {
+	if c.config.Debug {
 		log.Printf("Found %d total divs with %d bad divs replaced and %d textnodes converted inside divs", divs.Size(), badDivs, convertedTextNodes)
 	}
 	return doc
