@@ -2,13 +2,17 @@ package goose
 
 import (
 	"container/list"
+	"encoding/json"
 	"log"
 	"math"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/araddon/dateparse"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 	"gopkg.in/fatih/set.v0"
@@ -19,6 +23,9 @@ const defaultLanguage = "en"
 var motleyReplacement = "&#65533;" // U+FFFD (decimal 65533) is the "replacement character".
 //var escapedFragmentReplacement = regexp.MustCompile("#!")
 //var titleReplacements = regexp.MustCompile("&raquo;")
+
+// regex from https://github.com/codelucas/newspaper/blob/master/newspaper/urls.py
+var urlDateRegex = "([\\./\\-_]{0,1}(19|20)\\d{2})[\\./\\-_]{0,1}(([0-3]{0,1}[0-9][\\./\\-_])|(\\w{3,5}[\\./\\-_]))([0-3]{0,1}[0-9][\\./\\-]{0,1})?"
 
 var titleDelimiters = []string{
 	"|",
@@ -161,23 +168,33 @@ func (extr *ContentExtractor) GetMetaContentWithSelector(document *goquery.Docum
 	return strings.TrimSpace(content)
 }
 
-// GetMetaContent returns the content attribute of meta tag with the given property name
-func (extr *ContentExtractor) GetMetaContent(document *goquery.Document, metaName string) string {
+// GetMetaContentWithAttribute returns the content attribute of meta tag with the given value on the given attribute
+func (extr *ContentExtractor) GetMetaContentWithAttribute(document *goquery.Document, attr string, attrValue string) string {
 	content := ""
 	document.Find("meta").EachWithBreak(func(i int, s *goquery.Selection) bool {
-		attr, exists := s.Attr("name")
-		if exists && attr == metaName {
-			content, _ = s.Attr("content")
-			return false
-		}
-		attr, exists = s.Attr("itemprop")
-		if exists && attr == metaName {
+		attr, exists := s.Attr(attr)
+		if exists && attr == attrValue {
 			content, _ = s.Attr("content")
 			return false
 		}
 		return true
 	})
 	return content
+}
+
+// GetMetaContent returns the content attribute of meta tag with the given property name
+func (extr *ContentExtractor) GetMetaContent(document *goquery.Document, metaName string) string {
+	withName := extr.GetMetaContentWithAttribute(document, "name", metaName)
+	if withName != "" {
+		return withName
+	}
+
+	withItemprop := extr.GetMetaContentWithAttribute(document, "itemprop", metaName)
+	if withItemprop != "" {
+		return withItemprop
+	}
+
+	return ""
 }
 
 // GetMetaContents returns all the meta tags as name->content pairs
@@ -263,6 +280,133 @@ func (extr *ContentExtractor) GetTags(document *goquery.Document) *set.Set {
 	})
 
 	return tags
+}
+
+func (extr *ContentExtractor) extractDateFromURL(url string) string {
+	re := regexp.MustCompile(urlDateRegex)
+	match := re.FindString(url)
+
+	if match != "" {
+		return match
+	}
+
+	return ""
+}
+
+func (extr *ContentExtractor) extractDateFromMetadata(document *goquery.Document) string {
+	// Based on https://github.com/Webhose/article-date-extractor/blob/master/articleDateExtractor/__init__.py
+	attrs := map[string][]string{
+		"name": []string{
+			"pubdate", "publishdate", "DC.date.issued", "Date", "sailtrhu.date",
+			"article.published", "published-date", "article.created", "article_date_original",
+			"cXenseParse:recs:publishtime", "DATE_PUBLISHED",
+		},
+		"property": []string{
+			"bt:pubDate", "article:published_time",
+		},
+		"itemprop": []string{
+			"datePublished",
+		},
+		"http-equiv": []string{
+			"data",
+		},
+	}
+
+	for attr, names := range attrs {
+		for _, name := range names {
+			date := extr.GetMetaContentWithAttribute(document, attr, name)
+			if date != "" {
+				return date
+			}
+		}
+	}
+
+	// also try image urls
+	imgURL := extr.GetMetaContentWithAttribute(document, "property", "og:image")
+	if imgURL != "" {
+		imgDate := extr.extractDateFromURL(imgURL)
+		if imgDate != "" {
+			return imgDate
+		}
+	}
+
+	return ""
+}
+
+func (extr *ContentExtractor) extractDateFromJSONLD(document *goquery.Document) string {
+	rawJSON := ""
+
+	document.Find("script[type='application/ld+json']").EachWithBreak(func(i int, s *goquery.Selection) bool {
+		val := s.Text()
+		if val != "" {
+			rawJSON = val
+			return false
+		}
+		return true
+	})
+
+	if rawJSON == "" {
+		return ""
+	}
+
+	var data map[string]interface{}
+
+	cleanJSON := strings.Replace(rawJSON, "\n", "", -1)
+	err := json.Unmarshal([]byte(cleanJSON), &data)
+	if err != nil {
+		println("extractDateFromJSONLD:", err.Error())
+		return ""
+	}
+
+	attrs := []string{
+		"datePublished", "dateCreated",
+	}
+	for _, attr := range attrs {
+		val := data[attr]
+		if val != nil {
+			date := val.(string)
+			if date != "" {
+				return date
+			}
+		}
+	}
+
+	return ""
+}
+
+func (extr *ContentExtractor) extractDateFromHTMLTag(document *goquery.Document) string {
+	date := ""
+	document.Find("span[data-article-date]").EachWithBreak(func(i int, s *goquery.Selection) bool {
+		value, exists := s.Attr("data-article-date")
+		if exists {
+			date = value
+			return false
+		}
+		return true
+	})
+
+	return date
+}
+
+// GetPublishDate searches for a publish date in: URL, metadata, HTML tags; returns a Time struct
+func (extr *ContentExtractor) GetPublishDate(document *goquery.Document, url string) time.Time {
+	dateStr := ""
+	if d := extr.extractDateFromJSONLD(document); d != "" {
+		dateStr = d
+	} else if d := extr.extractDateFromMetadata(document); d != "" {
+		dateStr = d
+	} else if d := extr.extractDateFromHTMLTag(document); d != "" {
+		dateStr = d
+	} else if d := extr.extractDateFromURL(url); d != "" {
+		dateStr = d
+	}
+
+	t, err := dateparse.ParseAny(dateStr)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return t
 }
 
 // GetCleanTextAndLinks parses the main HTML node for text and links

@@ -134,12 +134,14 @@ func (c Crawler) Crawl() (*Article, error) {
 
 	startTime := time.Now().UnixNano()
 
-	article.RawHTML, err = document.Html()
+	article.RawHTML = c.RawHTML
 	if nil != err {
 		return nil, err
 	}
 	article.FinalURL = c.url
 	article.Doc = document
+
+	article.PublishDate = extractor.GetPublishDate(document, c.url)
 
 	article.Title = extractor.GetTitle(document)
 	article.MetaLang = extractor.GetMetaLanguage(document)

@@ -3,6 +3,7 @@ package goose
 import (
 	"github.com/PuerkitoBio/goquery"
 	"gopkg.in/fatih/set.v0"
+	"time"
 )
 
 // Article is a collection of properties extracted from the HTML body
@@ -24,7 +25,7 @@ type Article struct {
 	RawHTML         string             `json:"rawhtml,omitempty"`
 	Doc             *goquery.Document  `json:"-"`
 	Links           []string           `json:"links,omitempty"`
-	PublishDate     string             `json:"publishdate,omitempty"`
+	PublishDate     time.Time          `json:"publishdate,omitempty"`
 	AdditionalData  map[string]string  `json:"additionaldata,omitempty"`
 	Delta           int64              `json:"delta,omitempty"`
 }
